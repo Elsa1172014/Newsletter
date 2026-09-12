@@ -1,5 +1,5 @@
-const TARGET = 'تجارب تفاعلية تجعل التعلم لحظات لا تُنسى';
-const ISSUE_ID = 'mtyhb1jhe2ybo';
+const TARGET_HINT = 'تجارب تفاعلية تجعل التعلم لحظات لا تنسى';
+const ISSUE_IDS = ['mtobaudwizkmi','mtyhb1jhe2ybo'];
 
 function creds(){
   return {
@@ -13,8 +13,19 @@ async function cmd(url, token, command){
   if(!r.ok || j.error) throw new Error(j.error || String(r.status));
   return j.result;
 }
+function norm(s){
+  return String(s||'')
+    .normalize('NFD')
+    .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g,'')
+    .replace(/[أإآ]/g,'ا')
+    .replace(/ى/g,'ي')
+    .replace(/ة/g,'ه')
+    .replace(/[^\u0600-\u06FFa-zA-Z0-9]+/g,' ')
+    .trim();
+}
+const TARGET = norm(TARGET_HINT);
 function has(x){
-  if(typeof x==='string') return x.includes(TARGET);
+  if(typeof x==='string') return norm(x).includes(TARGET);
   if(Array.isArray(x)) return x.some(has);
   if(x && typeof x==='object') return Object.values(x).some(has);
   return false;
@@ -29,21 +40,28 @@ module.exports=async function(req,res){
   if(req.method!=='POST') return res.status(405).json({error:'POST only'});
   const {url,token}=creds();
   if(!url||!token) return res.status(500).json({error:'KV unavailable'});
-  const key=`arabicmag:issue:${ISSUE_ID}`;
   try{
-    const raw=await cmd(url,token,['GET',key]);
-    if(!raw) return res.status(404).json({error:'issue missing'});
-    const issue=JSON.parse(raw);
-    const found=candidates(issue);
-    if(found.length!==1) return res.status(409).json({error:'exactly one match required',matches:found.map(x=>x.path)});
-    const before={id:issue.id,status:issue.status,title:issue.title,week:issue.week,date:issue.date};
-    const hit=found[0];
+    const matches=[];
+    const loaded=[];
+    for(const id of ISSUE_IDS){
+      const key=`arabicmag:issue:${id}`;
+      const raw=await cmd(url,token,['GET',key]);
+      if(!raw) continue;
+      const issue=JSON.parse(raw);
+      loaded.push({id,key,issue});
+      for(const c of candidates(issue)) matches.push({id,key,issue,...c});
+    }
+    if(matches.length!==1){
+      return res.status(409).json({error:'exactly one matching news item required; no data changed',count:matches.length,matches:matches.map(m=>({issueId:m.id,path:m.path}))});
+    }
+    const hit=matches[0];
+    const before={id:hit.issue.id,status:hit.issue.status,title:hit.issue.title,week:hit.issue.week,date:hit.issue.date};
     hit.parent.splice(hit.index,1);
-    if(has(issue)) return res.status(409).json({error:'target remains; nothing saved'});
-    await cmd(url,token,['SET',key,JSON.stringify(issue)]);
-    const verifyRaw=await cmd(url,token,['GET',key]);
+    if(has(hit.issue)) return res.status(409).json({error:'target remains after planned removal; no data changed'});
+    await cmd(url,token,['SET',hit.key,JSON.stringify(hit.issue)]);
+    const verifyRaw=await cmd(url,token,['GET',hit.key]);
     const verify=JSON.parse(verifyRaw);
     if(has(verify) || verify.id!==before.id || verify.status!==before.status) throw new Error('verification failed');
-    return res.status(200).json({ok:true,removed:TARGET,path:hit.path,preserved:before});
+    return res.status(200).json({ok:true,removed:'requested news item only',issueId:hit.id,path:hit.path,preserved:before});
   }catch(e){ return res.status(500).json({error:String(e.message||e)}); }
 };
