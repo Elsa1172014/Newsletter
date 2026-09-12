@@ -2413,5 +2413,15 @@ if(storyMatch){
   render();
 }
 </script>
+<style>
+#readerLangSwitch{position:fixed;top:72px;left:18px;z-index:9999;display:flex;direction:ltr;background:#fff;border:1px solid rgba(14,36,68,.18);border-radius:999px;box-shadow:0 5px 18px rgba(14,36,68,.16);overflow:hidden;font-family:Cairo,sans-serif}
+#readerLangSwitch button{border:0;background:transparent;color:#0E2444;padding:7px 11px;font-weight:700;font-size:12px;cursor:pointer}
+#readerLangSwitch button.active{background:#0E2444;color:#fff}
+#readerTranslateStatus{position:fixed;top:112px;left:18px;z-index:9999;background:#fff;color:#0E2444;padding:5px 9px;border-radius:999px;font:11px Cairo,sans-serif;box-shadow:0 3px 12px rgba(0,0,0,.12);display:none}
+</style>
+<div id="readerLangSwitch" aria-label="Reader language"><button id="langAR" class="active">العربية</button><button id="langEN">English</button></div><div id="readerTranslateStatus">Translating…</div>
+<script>
+(()=>{const ar=document.getElementById('langAR'),en=document.getElementById('langEN'),st=document.getElementById('readerTranslateStatus');let originals=new Map();const skip=e=>!e||e.closest('#readerLangSwitch,#readerTranslateStatus,script,style,noscript,textarea,input,select,option')||e.isContentEditable;function nodes(){const w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);let a=[],n;while(n=w.nextNode()){if(!skip(n.parentElement)&&n.nodeValue.trim()&&/[\u0600-\u06FF]/.test(n.nodeValue))a.push(n)}return a}async function english(){en.disabled=true;st.style.display='block';try{let a=nodes();a.forEach(n=>{if(!originals.has(n))originals.set(n,n.nodeValue)});let texts=a.map(n=>n.nodeValue);if(!texts.length)return;let prompt='Translate the following Arabic newsletter text into natural professional English. Preserve order, meaning, names, numbers, punctuation, and line breaks. Return ONLY a JSON array of translated strings, same length and order. Do not add commentary.\n'+JSON.stringify(texts);let r=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt})});let d=await r.json();if(!r.ok)throw new Error(d.error||'Translation failed');let raw=d?.content?.[0]?.text||'';raw=raw.replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'');let tr=JSON.parse(raw);if(!Array.isArray(tr)||tr.length!==a.length)throw new Error('Translation format error');a.forEach((n,i)=>n.nodeValue=tr[i]);document.documentElement.lang='en';document.documentElement.dir='ltr';en.classList.add('active');ar.classList.remove('active')}catch(e){alert('تعذر إجراء الترجمة الآن: '+e.message)}finally{en.disabled=false;st.style.display='none'}}function arabic(){originals.forEach((v,n)=>{if(n.isConnected)n.nodeValue=v});document.documentElement.lang='ar';document.documentElement.dir='rtl';ar.classList.add('active');en.classList.remove('active')}en.addEventListener('click',english);ar.addEventListener('click',arabic)})();
+</script>
 </body>
 </html>
