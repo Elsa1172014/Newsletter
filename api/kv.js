@@ -1,17 +1,27 @@
 // Vercel Serverless Function — /api/kv
-// بديل حقيقي لـ window.storage (التي لا تعمل إلا داخل بيئة معاينة Claude.ai
-// ولا وجود لها في أي موقع منشور فعليًا — هذا كان سبب فقدان كل البيانات).
-//
-// يتصل مباشرة عبر REST بقاعدة بيانات Upstash Redis (بديل Vercel KV الذي
-// تم إيقافه) — بلا أي مكتبة خارجية، فقط fetch عادي، لتفادي الاعتماد على
-// حزمة قد تتوقف صيانتها لاحقًا.
+// Reliable Upstash Redis REST wrapper.
+// Uses JSON command bodies so large newsletter payloads are NOT placed in the URL.
 
 function getCreds(){
-  // يدعم كِلا مسمّيَي متغيرات البيئة، لأن نوع التكامل (Upstash عبر
-  // Marketplace) قد يضيف أيًا من الاسمين حسب وقت الربط.
   const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
   return { url, token };
+}
+
+async function redisCommand(url, token, command){
+  const upstream = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(command)
+  });
+  const data = await upstream.json().catch(()=>({}));
+  if(!upstream.ok || data.error){
+    throw new Error(data.error || `Redis request failed (${upstream.status})`);
+  }
+  return data.result;
 }
 
 module.exports = async function handler(req, res) {
@@ -27,30 +37,20 @@ module.exports = async function handler(req, res) {
     if (req.method === 'GET') {
       const key = req.query.key;
       if (!key) { res.status(400).json({ error: 'الحقل key مفقود' }); return; }
-      const upstream = await fetch(`${url}/get/${encodeURIComponent(key)}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await upstream.json();
-      if (!upstream.ok || data.result === null || data.result === undefined) {
+      const result = await redisCommand(url, token, ['GET', key]);
+      if (result === null || result === undefined) {
         res.status(404).json({ error: 'غير موجود' });
         return;
       }
-      res.status(200).json({ key, value: data.result });
+      res.status(200).json({ key, value: result });
       return;
     }
 
     if (req.method === 'POST') {
       const { key, value } = req.body || {};
       if (!key) { res.status(400).json({ error: 'الحقل key مفقود' }); return; }
-      const upstream = await fetch(`${url}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!upstream.ok) {
-        const data = await upstream.json().catch(()=>({}));
-        res.status(upstream.status).json({ error: data.error || 'فشل الحفظ في قاعدة البيانات' });
-        return;
-      }
+      if (value === undefined) { res.status(400).json({ error: 'الحقل value مفقود' }); return; }
+      await redisCommand(url, token, ['SET', key, String(value)]);
       res.status(200).json({ ok: true });
       return;
     }
@@ -58,15 +58,7 @@ module.exports = async function handler(req, res) {
     if (req.method === 'DELETE') {
       const key = req.query.key;
       if (!key) { res.status(400).json({ error: 'الحقل key مفقود' }); return; }
-      const upstream = await fetch(`${url}/del/${encodeURIComponent(key)}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!upstream.ok) {
-        const data = await upstream.json().catch(()=>({}));
-        res.status(upstream.status).json({ error: data.error || 'فشل الحذف من قاعدة البيانات' });
-        return;
-      }
+      await redisCommand(url, token, ['DEL', key]);
       res.status(200).json({ ok: true });
       return;
     }
