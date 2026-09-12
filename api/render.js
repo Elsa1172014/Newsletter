@@ -20,6 +20,37 @@ module.exports = function handler(req, res) {
     '.cInfo{flex:1;min-width:0;width:100%;text-align:center;}'
   );
 
+  const visitorArchivePatch = `
+<script>
+(function(){
+  document.addEventListener('click', async function(e){
+    const btn = e.target && e.target.closest ? e.target.closest('#visitorBtn') : null;
+    if(!btn) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    try{
+      DB.role = 'visitor';
+      const all = await loadAllIssues();
+      DB.issues = all.filter(iss => !iss.status || iss.status === 'published');
+      DB.currentIssue = null;
+      DB.view = 'archive';
+      render();
+    }catch(err){
+      console.error(err);
+      DB.role = 'visitor';
+      DB.issues = [];
+      DB.currentIssue = null;
+      DB.view = 'archive';
+      render();
+    }
+  }, true);
+})();
+</script>`;
+
+  if (!html.includes('visitorArchivePatchApplied')) {
+    html = html.replace('</body>', '<!-- visitorArchivePatchApplied -->' + visitorArchivePatch + '\n</body>');
+  }
+
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
   res.status(200).send(html);
