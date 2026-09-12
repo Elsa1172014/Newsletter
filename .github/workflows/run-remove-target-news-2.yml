@@ -1,0 +1,26 @@
+name: Run exact news removal 2
+on:
+  push:
+    paths:
+      - '.github/workflows/run-remove-target-news-2.yml'
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove only requested news item
+        run: |
+          sleep 6
+          code=$(curl -sS --retry 3 --retry-delay 3 -o remove-result-2.json -w '%{http_code}' -X POST 'https://newsletter-mu-five.vercel.app/api/remove-target-news')
+          echo "$code" > remove-status-2.txt
+          cat remove-result-2.json
+      - name: Record result and clean workflow
+        run: |
+          git config user.name "OpenAI"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/run-remove-target-news-2.yml
+          git add remove-result-2.json remove-status-2.txt
+          git commit -m "Record second exact news removal result"
+          git push
