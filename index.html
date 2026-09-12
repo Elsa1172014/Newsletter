@@ -753,8 +753,8 @@ function renderLogin(){
     DB.role = "visitor";
     const all = await loadAllIssues();
     DB.issues = all.filter(iss => !iss.status || iss.status === 'published');
-    if(DB.issues.length){ DB.currentIssue = DB.issues[0]; DB.view = "viewer"; }
-    else { DB.view = "archive"; }
+    DB.currentIssue = null;
+    DB.view = "archive";
     render();
   });
 
