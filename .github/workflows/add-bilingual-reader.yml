@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Add AR EN reader switch only
-        shell: python
+        shell: python {0}
         run: |
           from pathlib import Path
           p=Path('index.html')
@@ -36,5 +36,5 @@ jobs:
           git config user.email "elsayedmahmoued.em.em@gmail.com"
           git add index.html
           git rm .github/workflows/add-bilingual-reader.yml
-          git commit -m "Add optional automatic English reader translation" || exit 0
+          git commit -m "Add optional automatic English reader translation"
           git push
