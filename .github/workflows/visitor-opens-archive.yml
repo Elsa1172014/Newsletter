@@ -1,0 +1,52 @@
+name: Visitor opens archive once
+
+on:
+  push:
+    paths:
+      - '.github/workflows/visitor-opens-archive.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Change visitor landing only
+        shell: python {0}
+        run: |
+          from pathlib import Path
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+          old = '''  wrap.querySelector('#visitorBtn').addEventListener('click', async ()=>{
+    DB.role = "visitor";
+    const all = await loadAllIssues();
+    DB.issues = all.filter(iss => !iss.status || iss.status === 'published');
+    if(DB.issues.length){ DB.currentIssue = DB.issues[0]; DB.view = "viewer"; }
+    else { DB.view = "archive"; }
+    render();
+  });'''
+          new = '''  wrap.querySelector('#visitorBtn').addEventListener('click', async ()=>{
+    DB.role = "visitor";
+    const all = await loadAllIssues();
+    DB.issues = all.filter(iss => !iss.status || iss.status === 'published');
+    DB.currentIssue = null;
+    DB.view = "archive";
+    render();
+  });'''
+          if s.count(old) != 1:
+              raise SystemExit(f'Expected exactly one visitor handler, found {s.count(old)}. No changes made.')
+          p.write_text(s.replace(old,new,1), encoding='utf-8')
+
+      - name: Commit only requested change
+        run: |
+          git config user.name "OpenAI"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/visitor-opens-archive.yml
+          git add index.html
+          git commit -m "Open archive first for newsletter visitors"
+          git push
