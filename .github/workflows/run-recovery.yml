@@ -1,0 +1,25 @@
+name: Run newsletter recovery once
+on:
+  push:
+    paths:
+      - '.github/workflows/run-recovery.yml'
+permissions:
+  contents: write
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for Vercel and run recovery
+        run: |
+          sleep 12
+          curl -fsS --retry 6 --retry-delay 5 'https://newsletter-mu-five.vercel.app/api/recover-issues' -o recovery-result.json
+          cat recovery-result.json
+      - name: Save recovery result and remove workflow
+        run: |
+          git config user.name "OpenAI"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/run-recovery.yml
+          git add recovery-result.json
+          git commit -m "Record newsletter recovery result"
+          git push
