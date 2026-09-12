@@ -1,0 +1,102 @@
+name: Remove one newsletter item
+
+on:
+  push:
+    paths:
+      - '.github/workflows/remove-one-news.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  remove:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove only the requested news item
+        run: |
+          python3 - <<'PY'
+          import json, urllib.parse, urllib.request, copy
+
+          base='https://newsletter-mu-five.vercel.app/api/kv'
+          issue_id='mtobaudwizkmi'
+          key='arabicmag:issue:'+issue_id
+          title='تجارب تفاعلية تجعل التعلم لحظات لا تُنسى'
+
+          def get_issue():
+              u=base+'?'+urllib.parse.urlencode({'key':key})
+              with urllib.request.urlopen(u, timeout=60) as r:
+                  return json.loads(r.read().decode('utf-8'))['value']
+
+          raw=get_issue()
+          issue=json.loads(raw)
+          original=copy.deepcopy(issue)
+          matches=[]
+
+          def contains_title(x):
+              if isinstance(x,str):
+                  return title in x
+              if isinstance(x,dict):
+                  return any(contains_title(v) for v in x.values())
+              if isinstance(x,list):
+                  return any(contains_title(v) for v in x)
+              return False
+
+          def walk(parent, path='root'):
+              if isinstance(parent,list):
+                  for i,item in enumerate(parent):
+                      if contains_title(item):
+                          matches.append((parent,i,path+f'[{i}]'))
+                      else:
+                          walk(item,path+f'[{i}]')
+              elif isinstance(parent,dict):
+                  for k,v in parent.items():
+                      walk(v,path+'.'+str(k))
+
+          walk(issue)
+          # Keep only outermost list-item matches, so exactly one complete news card is removed.
+          uniq=[]
+          seen=set()
+          for parent,i,path in matches:
+              ident=(id(parent),i)
+              if ident not in seen:
+                  seen.add(ident); uniq.append((parent,i,path))
+
+          if len(uniq)!=1:
+              raise SystemExit(f'Expected exactly one matching news item, found {len(uniq)}. No data changed. Paths: {[p for _,_,p in uniq]}')
+
+          parent,i,path=uniq[0]
+          removed=parent.pop(i)
+
+          if contains_title(issue):
+              raise SystemExit('Title still present after planned removal. No data changed.')
+
+          # Save backup locally in workflow workspace before write.
+          with open('removed-news-backup.json','w',encoding='utf-8') as f:
+              json.dump(original,f,ensure_ascii=False)
+
+          body=json.dumps({'key':key,'value':json.dumps(issue,ensure_ascii=False,separators=(',',':'))},ensure_ascii=False).encode('utf-8')
+          req=urllib.request.Request(base,data=body,headers={'Content-Type':'application/json'},method='POST')
+          with urllib.request.urlopen(req, timeout=120) as r:
+              resp=json.loads(r.read().decode('utf-8'))
+          if not resp.get('ok'):
+              raise SystemExit('Save failed: '+repr(resp))
+
+          # Read-after-write verification: target gone, issue still exists and status unchanged.
+          check=json.loads(get_issue())
+          if contains_title(check):
+              raise SystemExit('Verification failed: target title still exists after save.')
+          if check.get('id')!=original.get('id') or check.get('status')!=original.get('status'):
+              raise SystemExit('Verification failed: issue identity/status changed unexpectedly.')
+
+          print('Removed exactly one news item at',path)
+          print('Preserved issue id/status:',check.get('id'),check.get('status'))
+          PY
+
+      - name: Remove temporary workflow
+        run: |
+          git config user.name "OpenAI"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/remove-one-news.yml
+          git commit -m "Remove temporary news-item workflow"
+          git push
